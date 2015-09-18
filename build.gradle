@@ -1,0 +1,130 @@
+import org.apache.tools.ant.filters.ReplaceTokens
+import java.text.SimpleDateFormat
+import org.ajoberstar.grgit.*
+
+
+
+apply plugin: 'java'
+apply plugin: 'maven'
+
+
+sourceCompatibility = 1.7
+targetCompatibility = 1.7
+
+if (version == 'unspecified') {
+    version = getVersionName()
+}
+
+ext.repo = Grgit.open(project.file('.'))
+
+
+configurations {
+    deployerJars
+}
+
+
+task wrapper(type: Wrapper) {
+    gradleVersion='2.1'
+}
+
+install {
+    repositories.mavenInstaller {
+        pom.version = project.version;
+        pom.artifactId = 'maptool-resources';
+        pom.groupId = 'net.rptools.maptool-resources';
+    }
+}
+
+
+uploadArchives {
+    repositories.mavenDeployer {
+        pom.version = project.version;
+        pom.artifactId = 'maptool-resources';
+        pom.groupId = 'net.rptools.maptool-resources';
+        configuration = configurations.deployerJars;
+        repository url: 'file://' + projectDir + '/../maven-repo'
+    }
+}
+
+buildscript {
+    repositories {
+        mavenCentral()
+        jcenter()
+        maven {
+            url 'https://plugins.gradle.org/m2/'
+        }
+    }
+    dependencies {
+        classpath 'org.ajoberstar:gradle-git:0.11.2'
+    }
+}
+
+
+dependencies {
+    deployerJars 'org.apache.maven.wagon:wagon-ssh:2.2'
+}
+
+ext.compileDate = new Date();
+ext.yyyymmdd = (new SimpleDateFormat('yyyyMMDD')).format(ext.compileDate);
+
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven {
+        url = 'http://maptool.craigs-stuff.net/repo/'
+    }
+}
+
+
+/*
+ * Gets the version name from the latest Git tag
+ */
+
+def getVersionName() {
+
+    if (project.hasProperty('buildVersion')) {
+        return buildVersion
+    } else {
+        def repo = Grgit.open(project.file('.'))
+        def tagName = repo.tag.list()[0].fullName.replace('refs/tags/', '')
+        def tagCommit = repo.tag.list()[0].commit.id
+        def headCommit = repo.head().id
+        def headAbbrvId = repo.head().abbreviatedId
+
+        if (tagCommit == headCommit) {
+            return tagName
+        } else {
+            println 'No version specified, please specify version with -Pversion=<version>'
+            throw org.gradle.api.InvalidUserDataException
+        }
+    }
+}
+
+
+task zipResources(type: Zip) {
+    from 'src/main/resources'
+    into ''
+    archiveName='default_images.zip'
+    destinationDir = new File(projectDir, 'build')
+    outputs.upToDateWhen {
+        false
+    }
+}
+
+
+task showBuildVersion() << {
+    println 'Build Version Number = ' + project.version
+}
+
+jar {
+    from 'build'
+    include 'default_images.zip'
+    manifest {
+        attributes 'Implementation-Title': 'maptool-resources',
+                   'Implementation-Version': project.version,
+                   'Class-Path'
+    }
+}
+jar.dependsOn += zipResources
+
